@@ -100,15 +100,19 @@ def convert(model, source_speaker_dict, target_speaker_dict, f0_dict, mcep_dict,
                 target_mcep = np.load(target_uttr_dir / "mcep.npy")
                 target_mcep_normalized = mcep_normalize(target_mcep, source_speaker, mcep_dict)
                 target_mcep_normalized = torch.from_numpy(target_mcep_normalized).float()
+                target_power = np.load(target_uttr_dir / "power.npy")
+                target_f0 = np.load(target_uttr_dir / "f0.npy")
+                target_ap = np.load(target_uttr_dir / "ap.npy")
+
                 with torch.no_grad():
                     _, cts_mean, _ = model.cts_encode(source_mcep_normalized.to(hp.device))
                     _, atr_mean, _ = model.atr_encode(target_mcep_normalized.to(hp.device))
                     atr_mean= torch.mean(atr_mean, 0, keepdim=True)
                     mcep_converted = model.decode(cts_mean, atr_mean)
-                mcep_converted = mcep_converted.cpu().numpy()
 
-                mcep_frame_num = mcep_converted.shape[0] + hp.mcep_channels -1
-                mcep_converted = delete_dump_fame(mcep_converted, mcep_frame_num)
+                mcep_converted = mcep_converted.cpu().numpy()
+                source_mcep_frame_num = source_f0.shape[0] 
+                mcep_converted = delete_dump_fame(mcep_converted, source_mcep_frame_num)
                 mcep_denormed = mcep_denormalize(mcep_converted, source_speaker, mcep_dict)
                 mcep_denormed = np.concatenate([source_power, mcep_denormed], axis=1)
                 mcep_denormed = mcep_denormed.copy(order='C')
@@ -119,14 +123,23 @@ def convert(model, source_speaker_dict, target_speaker_dict, f0_dict, mcep_dict,
                 converted_wav = speech_synthesis(f0_converted, mcep_denormed, source_ap,
                                                  hp.sampling_rate)
 
+                target_mcep_frame_num = target_f0.shape[0]
+                target_mcep = delete_dump_fame(target_mcep, target_mcep_frame_num)
+                target_mcep = np.concatenate([target_power, target_mcep], axis=1)
+                target_mcep = target_mcep.copy(order='C')
+
+                target_wav = speech_synthesis(target_f0, target_mcep, target_ap, hp.sampling_rate)
+
                 # [1.0, -1.0]の範囲を超えることがあるので正規化して0.99かけておく
                 converted_wav = librosa.util.normalize(converted_wav) * 0.99
 
                 os.makedirs(save_dir, exist_ok=True)
 
-                save_path = save_dir / f"{target_speaker}.wav"
-
+                save_path = save_dir / f"{source_speaker}_to_{target_speaker}.wav"
                 save_wav(save_path, hp.sampling_rate, converted_wav)
+
+                save_path = save_dir / f"{target_speaker}.wav"
+                save_wav(save_path, hp.sampling_rate, target_wav)
 
 
 def main():
@@ -159,6 +172,10 @@ def main():
     
     convert(model, seen_test_speaker_dict, seen_test_speaker_dict, f0_dict, mcep_dict,
             args.exp_name)
+    
+    convert(model, seen_test_speaker_dict, unseen_speaker_dict, f0_dict, mcep_dict,
+            args.exp_name)
+
 
 
 if __name__ == '__main__':

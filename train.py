@@ -58,16 +58,11 @@ def calc_ld_loss(model, x_t, label,  optimizer, cts_atr="cts"):
 
     optimizer.zero_grad()
     loss.backward()
-    if cts_atr =="cts":
-        clip_grad_norm_(model.cts_ld.parameters(), 5)
-    elif cts_atr == "atr":
-        clip_grad_norm_(model.atr_ld.parameters(), 5)
-    else:
-        sys.exit(1)
+    clip_grad_norm_(model.ld.parameters(), 5)
     optimizer.step()
 
 
-def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_loader,
+def train(model, vae_optimizer, ld_optimizer, vae_train_loader,
           cts_ld_train_loader, atr_ld_trian_loader, writer, epoch, debug):
     model.train()
 
@@ -90,10 +85,10 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
         atr_ld_x_t, atr_ld_label = atr_ld_x_t.to(hp.device), atr_ld_label.to(hp.device)
 
         # cts_ldの学習
-        calc_ld_loss(model, cts_ld_x_t, cts_ld_label, cts_ld_optimizer, cts_atr="cts")
+        calc_ld_loss(model, cts_ld_x_t, cts_ld_label, ld_optimizer, cts_atr="cts")
 
         # atr_ldの学習
-        calc_ld_loss(model, atr_ld_x_t, atr_ld_label, atr_ld_optimizer, cts_atr="atr")
+        calc_ld_loss(model, atr_ld_x_t, atr_ld_label, ld_optimizer, cts_atr="atr")
 
         # vaeの学習
         total_iter = (epoch - 1) * len(vae_train_loader) + counter
@@ -234,8 +229,7 @@ def main():
 
                                      # optimizer
     vae_optimizer = torch.optim.Adam(model.vae.parameters(), lr=hp.lr)
-    cts_ld_optimizer = torch.optim.Adam(model.cts_ld.parameters(), lr=0.0002)
-    atr_ld_optimizer = torch.optim.Adam(model.atr_ld.parameters(), lr=0.0002)
+    ld_optimizer = torch.optim.Adam(model.ld.parameters(), lr=0.0002)
 
     with open(hp.session_dir / "seen_speaker.json", 'r') as f:
         speaker_dict = json.load(f)
@@ -257,8 +251,8 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
 
     for epoch in tqdm(range(1, hp.spnetvc_epochs + 1)):
-        train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_loader,
-              cts_ld_train_loader, atr_ld_train_loader, writer, epoch, args.debug)
+        train(model, vae_optimizer, ld_optimizer, vae_train_loader, cts_ld_train_loader,
+              atr_ld_train_loader, writer, epoch, args.debug)
         valid(model, clf, valid_loader, writer, epoch, args.debug)
 
         if epoch == hp.spnetvc_epochs:

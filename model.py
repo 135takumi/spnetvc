@@ -165,8 +165,7 @@ class SplitterVC(nn.Module):
         super().__init__()
 
         self.vae = VAE()
-        self.cts_ld = LatentDiscriminator(n_speaker)
-        self.atr_ld = LatentDiscriminator(n_speaker)
+        self.ld = LatentDiscriminator(n_speaker)
 
     def cts_encode(self, x):
         mean, logvar = self.vae.cts_encoder(x)
@@ -186,12 +185,12 @@ class SplitterVC(nn.Module):
         return x
 
     def cts_discriminate(self, cts_z):
-        x = self.cts_ld(cts_z)
+        x = self.ld(cts_z)
 
         return x
 
     def atr_discriminate(self, atr_z):
-        x = self.atr_ld(atr_z)
+        x = self.ld(atr_z)
 
         return x
 

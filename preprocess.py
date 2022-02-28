@@ -68,8 +68,9 @@ def make_seen_dataset(seen_speaker_lst, seen_test_speaker_lst, mcep_dct, f0_dct)
             seen_test_speaker_dct[speaker] = speaker_index
 
         train_wav_lst = list(speaker_dir.glob("*/[B-J]??.wav"))
+        train_wav_lst = random.sample(train_wav_lst, hp.train_wav_num)
         valid_wav_lst = list(speaker_dir.glob("*/[A]??.wav"))
-        valid_wav_lst = sorted(valid_wav_lst)[25:]
+        valid_wav_lst = random.sample(valid_wav_lst, hp.vaild_wav_num)
 
         for train_wav in train_wav_lst:
             f0, mcep = extract_acoustic_features(train_wav, hp.tng_data_dir / speaker,
@@ -108,7 +109,7 @@ def make_test_dataset(test_speaker_lst, f0_dct=None, unseen=False):
         unseen_speaker_dct[speaker] = speaker_index
 
         test_wav_lst = list(speaker_dir.glob("*/[A]??.wav"))
-        test_wav_lst = sorted(test_wav_lst)[:25]
+        test_wav_lst = random.sample(test_wav_lst, hp.vaild_wav_num)
 
         for test_wav in test_wav_lst:
             f0, mcep = extract_acoustic_features(test_wav, hp.test_data_dir / speaker,
@@ -230,8 +231,8 @@ def make_dataset():
 
     seen_speaker_lst = male_speaker_lst[:int(hp.seen_speaker_num/2)] + \
                               female_speaker_lst[:int(hp.seen_speaker_num/2)]
-    seen_test_speaker_lst = male_speaker_lst[:int(hp.seen_speaker_num/2)] + \
-                              female_speaker_lst[:int(hp.seen_speaker_num/2)]
+    seen_test_speaker_lst = male_speaker_lst[:int(hp.seen_test_speaker_num/2)] + \
+                              female_speaker_lst[:int(hp.seen_test_speaker_num/2)]
     unseen_speaker_lst = male_speaker_lst[-int(hp.unseen_speaker_num/2):] + \
                               female_speaker_lst[-int(hp.unseen_speaker_num/2):]
 

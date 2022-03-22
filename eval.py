@@ -129,6 +129,7 @@ def convert(model, source_speaker_dict, target_speaker_dict, f0_dict, mcep_dict,
                 target_mcep = target_mcep.copy(order='C')
 
                 target_wav = speech_synthesis(target_f0, target_mcep, target_ap, hp.sampling_rate)
+                target_wav = librosa.util.normalize(target_wav) * 0.99
 
                 # [1.0, -1.0]の範囲を超えることがあるので正規化して0.99かけておく
                 converted_wav = librosa.util.normalize(converted_wav) * 0.99

@@ -223,10 +223,10 @@ def make_dataset():
     mcep_dct = {}
     f0_dct = {}
 
-    male_speaker_lst = os.listdir(hp.wav_dir / "male")
-    male_speaker_lst = random.sample(male_speaker_lst, len(male_speaker_lst))
-    female_speaker_lst = os.listdir(hp.wav_dir / "female")
-    female_speaker_lst = random.sample(female_speaker_lst, len(female_speaker_lst))
+    male_speaker_lst = [f for f in os.listdir(hp.wav_dir / "male") if not f.startswith('.')]
+    male_speaker_lst = random.sample(sorted(male_speaker_lst), len(male_speaker_lst))
+    female_speaker_lst = [f for f in os.listdir(hp.wav_dir / "female") if not f.startswith('.')]
+    female_speaker_lst = random.sample(sorted(female_speaker_lst), len(female_speaker_lst))
 
     seen_speaker_lst = male_speaker_lst[:int(hp.seen_speaker_num/2)] + \
                               female_speaker_lst[:int(hp.seen_speaker_num/2)]

@@ -16,8 +16,8 @@ seen_speaker_num = 16
 seen_test_speaker_num = 4
 unseen_speaker_num = 4
 train_wav_num = 25
-vaild_wav_num = 10
-test_wav_num = 25
+vaild_wav_num = 5
+test_wav_num = 5
 
 # training config
 batch_size = 128
@@ -49,7 +49,7 @@ exp_name = 'many_spkr'
 #base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
 base_dir = Path('/home/isako/M1/projects/spnetvc')
 dir_path_asj = Path('/data/corpus/ASJ')
-session_dir = base_dir / 'sessions'
+session_dir = base_dir / 'm_sessions'
 wav_dir = session_dir / 'wav_data'
 tng_data_dir = session_dir / 'train_data'
 val_data_dir = session_dir / 'valid_data'

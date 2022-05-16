@@ -12,12 +12,12 @@ sampling_rate = 16000
 flame_interval = 5
 mcep_channels = 32
 seq_len = 32
-seen_speaker_num = 16
+seen_speaker_num = 4
 seen_test_speaker_num = 4
 unseen_speaker_num = 4
-train_wav_num = 25
-vaild_wav_num = 5
-test_wav_num = 5
+train_wav_num = 100
+vaild_wav_num = 25
+test_wav_num = 25
 
 # training config
 batch_size = 128
@@ -43,13 +43,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 実験名
 clf_name = 'clf1'
-exp_name = 'many_spkr'
+exp_name = 'test'
 
 # 以降は実行に必要なファイルパスの指定
 #base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
 base_dir = Path('/home/isako/M1/projects/spnetvc')
 dir_path_asj = Path('/data/corpus/ASJ')
-session_dir = base_dir / 'm_sessions'
+session_dir = base_dir / 'sessions'
 wav_dir = session_dir / 'wav_data'
 tng_data_dir = session_dir / 'train_data'
 val_data_dir = session_dir / 'valid_data'

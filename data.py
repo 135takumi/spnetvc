@@ -66,3 +66,66 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class AudioDataset_for_z_check(torch.utils.data.Dataset):
+
+    def __init__(self, data_dir, seen_speaker_dict, unseen_speaker_dict, mcep_dict, seq_len=128):
+
+        self.seq_len = seq_len
+        self.seen_speaker_dict = seen_speaker_dict
+        self.unseen_speaker_dict = unseen_speaker_dict
+
+        self.mcep_dict = {}
+
+        for k, v in mcep_dict.items():
+            label = self.seen_speaker_dict[k]
+            self.mcep_dict[label] = {
+                "mean": np.array(v['mean'])[None, :],
+                "std": np.array(v['std'])[None, :]
+            }
+
+            self.mean = np.array(v['mean'])[None, :]
+            self.std = np.array(v['std'])[None, :]
+
+        self.data = self.read_data(data_dir)
+
+    def mcep_normalize(self, mcep):
+        mcep = (mcep - self.mean) / self.std
+
+        return mcep
+
+    def read_data(self, data_dir):
+        data = []
+
+        for speaker in os.listdir(data_dir):
+            speaker_label = 0 if speaker in self.seen_speaker_dict else 1
+            speaker_dir = data_dir / speaker
+
+            for uttr in os.listdir(speaker_dir):
+                uttr_dir = os.path.join(speaker_dir, uttr)
+
+                if not os.path.isdir(uttr_dir):
+                    continue
+
+                mcep = np.load(os.path.join(uttr_dir, "mcep.npy"))
+                mcep = self.mcep_normalize(mcep)
+                data.append((mcep, speaker_label))
+
+        return data
+
+    def __getitem__(self, index):
+        mcep, label = self.data[index]
+
+        max_start = np.shape(mcep)[0] - 1
+        idx = random.randint(0, max_start)
+        mcep = mcep[idx]
+
+        mcep = torch.from_numpy(mcep).float()
+
+        label = torch.from_numpy(np.array(label)).long()
+
+        return mcep, label
+
+    def __len__(self):
+        return len(self.data)

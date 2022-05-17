@@ -28,7 +28,7 @@ clf_epochs = 10000
 rec_lambda  = 1
 mse_atr_lambda = 1
 cts_kl_lambda = 0.05
-atr_kl_lambda = 1
+atr_kl_lambda = 0
 cts_ld_lambda = 1
 atr_ld_lambda = 0.5
 lambda_schedule = 80000
@@ -43,10 +43,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 実験名
 clf_name = 'clf1'
-exp_name = 'test'
+exp_name = 'no_kld'
 
 # 以降は実行に必要なファイルパスの指定
-#base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
+# base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
 base_dir = Path('/home/isako/M1/projects/spnetvc')
 dir_path_asj = Path('/data/corpus/ASJ')
 session_dir = base_dir / 'sessions'

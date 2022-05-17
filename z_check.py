@@ -12,7 +12,7 @@ from torch.nn.utils import clip_grad_norm_
 
 
 import hyper_parameters as hp
-from data import AudioDataset
+from data import AudioDataset, AudioDataset_for_z_check
 from model import SplitterVC, LatentDiscriminator
 
 
@@ -131,14 +131,19 @@ def main():
     atr_z_clf_optimizer = torch.optim.Adam(atr_z_clf.parameters(), lr=0.0002)
 
     with open(hp.session_dir / "seen_speaker.json", 'r') as f:
-        speaker_dict = json.load(f)
+        seen_speaker_dict = json.load(f)
+    with open(hp.session_dir / "unseen_speaker.json", 'r') as f:
+        unseen_speaker_dict = json.load(f)
     with open(hp.session_dir / "mcep_statistics.json", 'r') as f:
         mcep_dict = json.load(f)
 
-    train_data = AudioDataset(hp.tng_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
-    valid_data = AudioDataset(hp.val_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
+    train_data = AudioDataset(hp.tng_data_dir, seen_speaker_dict, mcep_dict, seq_len=hp.seq_len)
+    valid_data = AudioDataset(hp.val_data_dir, seen_speaker_dict, mcep_dict, seq_len=hp.seq_len)
+    test_data = AudioDataset_for_z_check(hp.test_data_dir, seen_speaker_dict, unseen_speaker_dict,
+                                         mcep_dict, seq_len=hp.seq_len)
     train_loader = DataLoader(train_data, batch_size=hp.batch_size, shuffle=True)
     valid_loader = DataLoader(valid_data, batch_size=hp.batch_size, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=hp.batch_size, shuffle=True)
 
     save_dir = hp.tng_result_dir / args.exp_name / "z_clf"
     os.makedirs(save_dir, exist_ok=True)
@@ -167,7 +172,7 @@ def main():
     list_label  = []
 
     for i in range(4):
-        for x_t, _, label in valid_loader:
+        for x_t, label in test_loader:
             x_t = x_t.to(hp.device)
             label = label.to(hp.device)
 

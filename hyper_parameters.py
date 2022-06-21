@@ -5,18 +5,18 @@ import torch
 
 
 # ASJセットで使用するvolの数
-vols = 1
+vols = 3
 
 # feature config
 sampling_rate = 16000
 flame_interval = 5
 mcep_channels = 32
 seq_len = 32
-seen_speaker_num = 4
+seen_speaker_num = 50
 seen_test_speaker_num = 4
 unseen_speaker_num = 4
-train_wav_num = 100
-vaild_wav_num = 25
+train_wav_num = 25
+vaild_wav_num = 5
 test_wav_num = 25
 
 # training config
@@ -43,7 +43,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 実験名
 clf_name = 'clf1'
-exp_name = 'test'
+exp_name = 'normal_spnetvc'
 
 # 以降は実行に必要なファイルパスの指定
 #base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')

@@ -105,10 +105,10 @@ def convert(model, source_speaker_dict, target_speaker_dict, f0_dict, mcep_dict,
                 target_ap = np.load(target_uttr_dir / "ap.npy")
 
                 with torch.no_grad():
-                    _, cts_mean, _ = model.cts_encode(source_mcep_normalized.to(hp.device))
+                    cts_z, _, _ = model.cts_encode(source_mcep_normalized.to(hp.device))
                     _, atr_mean, _ = model.atr_encode(target_mcep_normalized.to(hp.device))
-                    atr_mean= torch.mean(atr_mean, 0, keepdim=True)
-                    mcep_converted = model.decode(cts_mean, atr_mean)
+                    atr_mean = torch.mean(atr_mean, 0, keepdim=True)
+                    mcep_converted = model.decode(cts_z, atr_mean)
 
                 mcep_converted = mcep_converted.cpu().numpy()
                 source_mcep_frame_num = source_f0.shape[0] 
@@ -166,7 +166,7 @@ def main():
                 "std": np.array(v["std"])[None, :]
             }
 
-    model = SplitterVC(hp.seen_speaker_num).to(hp.device)
+    model = SplitterVC(hp.seen_speaker_num, hp.emb_num,hp. emb_dim).to(hp.device)
     model.load_state_dict(torch.load(hp.tng_result_dir / args.exp_name / "spnetvc" / args.weight,
                                      map_location=hp.device)["model"])
     model.eval()

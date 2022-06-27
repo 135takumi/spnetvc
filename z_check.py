@@ -118,7 +118,7 @@ def main():
     writer = SummaryWriter(hp.session_dir/ "log" / "z_check" / args.exp_name)
 
     # モデルの読み込み
-    model = SplitterVC(hp.seen_speaker_num).to(hp.device)
+    model = SplitterVC(hp.seen_speaker_num, hp.emb_num, hp.emb_dim).to(hp.device)
     model.load_state_dict(torch.load(hp.tng_result_dir / args.exp_name / "spnetvc" / args.weight,
                           map_location=hp.device)["model"])
     model.eval()
@@ -164,7 +164,7 @@ def main():
 
     list_c_data = []
     list_a_data = []
-    list_label  = []
+    list_label = []
 
     for i in range(4):
         for x_t, _, label in valid_loader:

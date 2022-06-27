@@ -3,14 +3,12 @@ import json
 import os
 import sys
 
-
 import torch
 import torch.nn.functional as f
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
-
 
 import hyper_parameters as hp
 from data import AudioDataset
@@ -40,7 +38,7 @@ def get_lambda(ld_lambda, n_iter, lambda_schedule):
         return ld_lambda * float(min(n_iter, lambda_schedule)) / lambda_schedule
 
 
-def calc_ld_loss(model, x_t, label,  optimizer, cts_atr="cts"):
+def calc_ld_loss(model, x_t, label, optimizer, cts_atr="cts"):
     # ldの学習
 
     if cts_atr == "cts":
@@ -58,7 +56,7 @@ def calc_ld_loss(model, x_t, label,  optimizer, cts_atr="cts"):
 
     optimizer.zero_grad()
     loss.backward()
-    if cts_atr =="cts":
+    if cts_atr == "cts":
         clip_grad_norm_(model.cts_ld.parameters(), 5)
     elif cts_atr == "atr":
         clip_grad_norm_(model.atr_ld.parameters(), 5)
@@ -74,10 +72,11 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
     running_loss = 0
     running_loss_rec = 0
     running_loss_mse_atr = 0
-    running_loss_cts_kl = 0
     running_loss_atr_kl = 0
     running_loss_cts_ld = 0
     running_loss_atr_ld = 0
+    running_loss_commitment = 0
+    running_loss_emb = 0
     counter = 1
 
     for (vae_x_t1, vae_x_t2, vae_label), (cts_ld_x_t, _, cts_ld_label), \
@@ -98,7 +97,7 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
         # vaeの学習
         total_iter = (epoch - 1) * len(vae_train_loader) + counter
 
-        cts_z, cts_mean, cts_logvar = model.cts_encode(vae_x_t1)
+        cts_z, commitment_loss, emb_loss = model.cts_encode(vae_x_t1)
         atr_z1, atr_mean, atr_logvar = model.atr_encode(vae_x_t1)
         atr_z2, _, _ = model.atr_encode(vae_x_t2)
         x_recon_t = model.decode(cts_z, atr_z1)
@@ -108,7 +107,6 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
 
         rec_loss = 0.5 * f.mse_loss(x_recon_t, vae_x_t1)
         mse_atr_loss = 0.5 * f.mse_loss(atr_z1, atr_z2)
-        cts_kl_loss = kl_div(cts_mean, cts_logvar)
         atr_kl_loss = kl_div(atr_mean, atr_logvar)
         cts_ld_loss = f.cross_entropy(cts_discriminator_result, vae_label)
         cts_lambda = get_lambda(hp.cts_ld_lambda, total_iter, hp.lambda_schedule)
@@ -117,8 +115,9 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
 
         # vaeのloss
         loss = hp.rec_lambda * rec_loss + hp.mse_atr_lambda * mse_atr_loss \
-               + hp.cts_kl_lambda * cts_kl_loss + hp.atr_kl_lambda * atr_kl_loss \
-               - cts_lambda * cts_ld_loss + atr_lambda * atr_ld_loss
+               + hp.atr_kl_lambda * atr_kl_loss + atr_lambda * atr_ld_loss \
+               - cts_lambda * cts_ld_loss + hp.commitment_lambda * commitment_loss \
+               + hp.emb_lambda * emb_loss
 
         vae_optimizer.zero_grad()
         loss.backward()
@@ -128,10 +127,11 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
         running_loss += loss.item()
         running_loss_rec += rec_loss.item()
         running_loss_mse_atr += mse_atr_loss.item()
-        running_loss_cts_kl += cts_kl_loss.item()
         running_loss_atr_kl += atr_kl_loss.item()
         running_loss_cts_ld += cts_ld_loss.item()
         running_loss_atr_ld += atr_ld_loss.item()
+        running_loss_commitment += commitment_loss.item()
+        running_loss_emb += emb_loss.item()
 
         counter += 1
 
@@ -142,10 +142,11 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
     writer.add_scalar("train/model", running_loss / denominator, epoch)
     writer.add_scalar("train/reconstract", running_loss_rec / denominator, epoch)
     writer.add_scalar("train/mse_atr", running_loss_mse_atr / denominator, epoch)
-    writer.add_scalar("train/cts_kl", running_loss_cts_kl / denominator, epoch)
     writer.add_scalar("train/atr_kl", running_loss_atr_kl / denominator, epoch)
     writer.add_scalar("train/cts_ld", running_loss_cts_ld / denominator, epoch)
     writer.add_scalar("train/atr_ld", running_loss_atr_ld / denominator, epoch)
+    writer.add_scalar("train/commitment", running_loss_commitment / denominator, epoch)
+    writer.add_scalar("train/emb", running_loss_emb / denominator, epoch)
 
 
 def valid(model, clf, valid_loader, writer, epoch, debug):
@@ -155,17 +156,18 @@ def valid(model, clf, valid_loader, writer, epoch, debug):
     running_accu = 0
     running_loss_rec = 0
     running_loss_mse_atr = 0
-    running_loss_cts_kl = 0
     running_loss_atr_kl = 0
     running_loss_cts_ld = 0
     running_loss_atr_ld = 0
+    running_loss_commitment = 0
+    running_loss_emb = 0
     counter = 1
 
     with torch.no_grad():
         for x_t1, x_t2, label in valid_loader:
             x_t1, x_t2, label = x_t1.to(hp.device), x_t2.to(hp.device), label.to(hp.device)
 
-            cts_z, cts_mean, cts_logvar = model.cts_encode(x_t1)
+            cts_z, commitment_loss, emb_loss = model.cts_encode(x_t1)
             atr_z1, atr_mean, atr_logvar = model.atr_encode(x_t1)
             atr_z2, _, _ = model.atr_encode(x_t2)
 
@@ -180,24 +182,25 @@ def valid(model, clf, valid_loader, writer, epoch, debug):
 
             rec_loss = 0.5 * f.mse_loss(x_recon_t, x_t1)
             mse_atr_loss = 0.5 * f.mse_loss(atr_z1, atr_z2)
-            cts_kl_loss = kl_div(cts_mean, cts_logvar)
             atr_kl_loss = kl_div(atr_mean, atr_logvar)
             cts_ld_loss = f.cross_entropy(cts_discriminator_result, label)
             atr_ld_loss = f.cross_entropy(atr_discriminator_result, label)
 
             # vaeのloss
             loss = hp.rec_lambda * rec_loss + hp.mse_atr_lambda * mse_atr_loss \
-                   + hp.cts_kl_lambda * cts_kl_loss + hp.atr_kl_lambda * atr_kl_loss \
-                   - hp.cts_ld_lambda * cts_ld_loss + hp.atr_ld_lambda * atr_ld_loss
+                   + hp.atr_kl_lambda * atr_kl_loss - hp.cts_ld_lambda * cts_ld_loss \
+                   + hp.atr_ld_lambda * atr_ld_loss + hp.commitment_lambda * commitment_loss \
+                   + hp.emb_lambda * emb_loss
 
             running_loss += loss.item()
             running_accu += accu.item()
             running_loss_rec += rec_loss.item()
             running_loss_mse_atr += mse_atr_loss.item()
-            running_loss_cts_kl += cts_kl_loss.item()
             running_loss_atr_kl += atr_kl_loss.item()
             running_loss_cts_ld += cts_ld_loss.item()
             running_loss_atr_ld += atr_ld_loss.item()
+            running_loss_commitment += commitment_loss.item()
+            running_loss_emb += emb_loss.item()
 
             counter += 1
 
@@ -209,9 +212,10 @@ def valid(model, clf, valid_loader, writer, epoch, debug):
     writer.add_scalar("valid/accu", running_accu / denominator, epoch)
     writer.add_scalar("valid/reconstract", running_loss_rec / denominator, epoch)
     writer.add_scalar("valid/mse_atr", running_loss_mse_atr / denominator, epoch)
-    writer.add_scalar("valid/cts_kl", running_loss_cts_kl / denominator, epoch)
     writer.add_scalar("valid/atr_kl", running_loss_atr_kl / denominator, epoch)
     writer.add_scalar("valid/cts_ld", running_loss_cts_ld / denominator, epoch)
+    writer.add_scalar("valid/commitment", running_loss_cts_ld / denominator, epoch)
+    writer.add_scalar("valid/emb", running_loss_cts_ld / denominator, epoch)
     writer.add_scalar("valid/atr_ld", running_loss_atr_ld / denominator, epoch)
 
 
@@ -223,16 +227,16 @@ def main():
     args = parser.parse_args()
 
     # ロガーの作成
-    writer = SummaryWriter(hp.session_dir/ "log" / "spnetvc" / args.exp_name)
+    writer = SummaryWriter(hp.session_dir / "log" / "spnetvc" / args.exp_name)
 
     # モデル
-    model = SplitterVC(hp.seen_speaker_num).to(hp.device)
+    model = SplitterVC(hp.seen_speaker_num, hp.emb_num, hp.emb_dim).to(hp.device)
 
     clf = Classifier(hp.seen_speaker_num).to(hp.device)
     clf.load_state_dict(torch.load(hp.tng_result_dir / hp.clf_name / "CLF-latest.pth",
                                    map_location=hp.device)["model"])
 
-                                     # optimizer
+    # optimizer
     vae_optimizer = torch.optim.Adam(model.vae.parameters(), lr=hp.lr)
     cts_ld_optimizer = torch.optim.Adam(model.cts_ld.parameters(), lr=0.0002)
     atr_ld_optimizer = torch.optim.Adam(model.atr_ld.parameters(), lr=0.0002)

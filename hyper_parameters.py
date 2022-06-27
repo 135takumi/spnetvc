@@ -18,6 +18,8 @@ unseen_speaker_num = 4
 train_wav_num = 25
 vaild_wav_num = 5
 test_wav_num = 25
+emb_num = 512
+emb_dim = 64
 
 # training config
 batch_size = 128
@@ -25,12 +27,13 @@ lr = 1e-4
 spnetvc_epochs = 20000
 clf_epochs = 10000
 
-rec_lambda  = 1
+rec_lambda = 1
 mse_atr_lambda = 1
-cts_kl_lambda = 0.05
 atr_kl_lambda = 1
 cts_ld_lambda = 1
 atr_ld_lambda = 0.5
+commitment_lambda = 0.25
+emb_lambda = 1
 lambda_schedule = 80000
 
 debug = False
@@ -43,10 +46,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 実験名
 clf_name = 'clf1'
-exp_name = 'normal_spnetvc'
+exp_name = 'contents_vq'
 
 # 以降は実行に必要なファイルパスの指定
-#base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
+# base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
+# base_dir = Path('/Users/takumiisako/M1/projects/spnetvc')
 base_dir = Path('/home/isako/M1/projects/spnetvc')
 dir_path_asj = Path('/data/corpus/ASJ')
 session_dir = base_dir / 'sessions'

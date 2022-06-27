@@ -1,5 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+import hyper_parameters as hp
 
 
 def reparameterize(mean, logvar):
@@ -30,7 +34,21 @@ def enc2d_layers():
     return model
 
 
-class Encoder2d(nn.Module):
+class Contents_Encoder(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.model = enc2d_layers()
+
+    def forward(self, x):
+        z = self.model(x)
+        z = z.view(-1, 64)
+
+        return z
+
+
+class Attribute_Encoder(nn.Module):
 
     def __init__(self):
         super().__init__()
@@ -48,38 +66,40 @@ class Encoder2d(nn.Module):
         return mean, logvar
 
 
-class Encoder1d(nn.Module):
+class VectorQuantizer(nn.Module):
+    def __init__(self, emb_num, emb_dim):
+        super(VectorQuantizer, self).__init__()
 
-    def __init__(self, in_channels=32):
-        super().__init__()
+        self._emb_num = emb_num
+        self._emb_dim = emb_dim
 
-        self.model = nn.Sequential(
-            nn.Conv1d(in_channels, 32, kernel_size=1, stride=1),
-            nn.BatchNorm1d(32),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(32, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.AvgPool1d(32, stride=1)
-        )
-        self.fc_mean = nn.Linear(64, 64)
-        self.fc_logvar = nn.Linear(64, 64)
+        self._emb = nn.Embedding(self._emb_num, self._emb_dim)
+        self._emb.weight.data.uniform_(-1/self._emb_num, 1/self._emb_num)
 
-    def forward(self, x):
-        x = (torch.squeeze(x)).permute(0,2,1)
-        x = self.model(x)
-        x = x.view(-1, 64)
-        mean = self.fc_mean(x)
-        logvar = self.fc_logvar(x)
+    def forward(self, z):
+        # flatten input
+        z_shape = z.shape
+        flat_z = z.view(-1, self._emb_dim)
 
-        return mean, logvar
+        distance = (torch.sum(flat_z ** 2, dim=1, keepdim=True)
+                    + torch.sum(self._emb.weight**2, dim=1)
+                    - 2 * torch.matmul(flat_z, self._emb.weight.t()))
+
+        # Encoding
+        encodings_indices = torch.argmin(distance, dim=1).unsqueeze(1)
+        enoodings = torch.zeros(encodings_indices.size(0), self._emb_num, device=hp.device)
+        enoodings.scatter_(1, encodings_indices, 1)
+
+        # Quantize and unflatten
+        quantized_z = torch.matmul(enoodings, self._emb.weight).view(z_shape)
+
+        # Loss
+        commitment_loss = 0.5 * F.mse_loss(quantized_z.detach(), z)
+        emb_loss = 0.5 * F.mse_loss(quantized_z, z.detach())
+
+        quantized_z = z + (quantized_z - z).detach()
+
+        return quantized_z, commitment_loss, emb_loss
 
 
 class Decoder(nn.Module):
@@ -116,7 +136,6 @@ class Decoder(nn.Module):
 
         for block in self.blocks:
             img_size = dec_output.size(2)
-            # to do: わんちゃんバグる
             x = [dec_output, atr_z.expand(batch_size, z_size, img_size, img_size)]
             x = torch.cat(x, 1)
             dec_output = block(x)
@@ -152,27 +171,28 @@ class LatentDiscriminator(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self):
+    def __init__(self, emb_num, emb_dim):
         super().__init__()
 
-        self.cts_encoder = Encoder2d()
-        self.atr_encoder = Encoder2d()
+        self.cts_encoder = Contents_Encoder()
+        self.atr_encoder = Attribute_Encoder()
+        self.vector_quantizer = VectorQuantizer(emb_num, emb_dim)
         self.decoder = Decoder()
 
 
 class SplitterVC(nn.Module):
-    def __init__(self,  n_speaker):
+    def __init__(self,  n_speaker, emb_num, emb_dim):
         super().__init__()
 
-        self.vae = VAE()
+        self.vae = VAE(emb_num, emb_dim)
         self.cts_ld = LatentDiscriminator(n_speaker)
         self.atr_ld = LatentDiscriminator(n_speaker)
 
     def cts_encode(self, x):
-        mean, logvar = self.vae.cts_encoder(x)
-        z = reparameterize(mean, logvar)
+        z = self.vae.cts_encoder(x)
+        quantized_z, commitment_loss, emb_loss = self.vae.vector_quantizer(z)
 
-        return z, mean, logvar
+        return quantized_z, commitment_loss, emb_loss
 
     def atr_encode(self, x):
         mean, logvar = self.vae.atr_encoder(x)

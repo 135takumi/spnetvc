@@ -5,7 +5,7 @@ import sys
 
 
 import torch
-import torch.nn.functional as f
+import torch.nn.functional as func
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
@@ -54,7 +54,7 @@ def calc_ld_loss(model, x_t, label,  optimizer, cts_atr="cts"):
     else:
         sys.exit(1)
 
-    loss = f.cross_entropy(discriminator_result, label)
+    loss = func.cross_entropy(discriminator_result, label)
 
     optimizer.zero_grad()
     loss.backward()
@@ -106,13 +106,13 @@ def train(model, vae_optimizer, cts_ld_optimizer, atr_ld_optimizer, vae_train_lo
         cts_discriminator_result = model.cts_discriminate(cts_z)
         atr_discriminator_result = model.atr_discriminate(atr_z1)
 
-        rec_loss = 0.5 * f.mse_loss(x_recon_t, vae_x_t1)
-        mse_atr_loss = 0.5 * f.mse_loss(atr_z1, atr_z2)
+        rec_loss = 0.5 * func.mse_loss(x_recon_t, vae_x_t1)
+        mse_atr_loss = 0.5 * func.mse_loss(atr_z1, atr_z2)
         cts_kl_loss = kl_div(cts_mean, cts_logvar)
         atr_kl_loss = kl_div(atr_mean, atr_logvar)
-        cts_ld_loss = f.cross_entropy(cts_discriminator_result, vae_label)
+        cts_ld_loss = func.cross_entropy(cts_discriminator_result, vae_label)
         cts_lambda = get_lambda(hp.cts_ld_lambda, total_iter, hp.lambda_schedule)
-        atr_ld_loss = f.cross_entropy(atr_discriminator_result, vae_label)
+        atr_ld_loss = func.cross_entropy(atr_discriminator_result, vae_label)
         atr_lambda = get_lambda(hp.atr_ld_lambda, total_iter, hp.lambda_schedule)
 
         # vaeのloss
@@ -174,16 +174,16 @@ def valid(model, clf, valid_loader, writer, epoch, debug):
             x_recon_t = model.decode(cts_z, atr_z1)
 
             clf_result = clf(x_recon_t)
-            estimated_label = f.softmax(clf_result, dim=1)
+            estimated_label = func.softmax(clf_result, dim=1)
             accu = (estimated_label.max(1)[1] == label)
             accu = torch.mean(accu.float())
 
-            rec_loss = 0.5 * f.mse_loss(x_recon_t, x_t1)
-            mse_atr_loss = 0.5 * f.mse_loss(atr_z1, atr_z2)
+            rec_loss = 0.5 * func.mse_loss(x_recon_t, x_t1)
+            mse_atr_loss = 0.5 * func.mse_loss(atr_z1, atr_z2)
             cts_kl_loss = kl_div(cts_mean, cts_logvar)
             atr_kl_loss = kl_div(atr_mean, atr_logvar)
-            cts_ld_loss = f.cross_entropy(cts_discriminator_result, label)
-            atr_ld_loss = f.cross_entropy(atr_discriminator_result, label)
+            cts_ld_loss = func.cross_entropy(cts_discriminator_result, label)
+            atr_ld_loss = func.cross_entropy(atr_discriminator_result, label)
 
             # vaeのloss
             loss = hp.rec_lambda * rec_loss + hp.mse_atr_lambda * mse_atr_loss \
@@ -240,12 +240,12 @@ def main():
     with open(hp.session_dir / "seen_speaker.json", 'r') as f:
         speaker_dict = json.load(f)
 
-    with open(hp.session_dir / "mcep_statistics.json", 'r') as f:
-        mcep_dict = json.load(f)
+    with open(hp.session_dir / "melsp_statistics.json", 'r') as f:
+        melsp_dict = json.load(f)
 
     # Create data loaders
-    train_data = AudioDataset(hp.tng_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
-    valid_data = AudioDataset(hp.val_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
+    train_data = AudioDataset(hp.tng_data_dir, speaker_dict, melsp_dict, seq_len=hp.seq_len)
+    valid_data = AudioDataset(hp.val_data_dir, speaker_dict, melsp_dict, seq_len=hp.seq_len)
 
     vae_train_loader = DataLoader(train_data, batch_size=hp.batch_size, shuffle=True)
     cts_ld_train_loader = DataLoader(train_data, batch_size=hp.batch_size, shuffle=True)

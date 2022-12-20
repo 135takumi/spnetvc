@@ -8,15 +8,15 @@ import torch
 vols = 3
 
 # feature config
-sampling_rate = 16000
+sampling_rate = 24000
 flame_interval = 5
-mcep_channels = 32
+melsp_channels = 80
 seq_len = 32
-seen_speaker_num = 50
+seen_speaker_num = 4
 seen_test_speaker_num = 4
 unseen_speaker_num = 4
 train_wav_num = 25
-vaild_wav_num = 5
+valid_wav_num = 5
 test_wav_num = 25
 
 # training config
@@ -43,13 +43,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 実験名
 clf_name = 'clf1'
-exp_name = 'normal_spnetvc'
+exp_name = 'hifi-test'
 
 # 以降は実行に必要なファイルパスの指定
-#base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
+# base_dir = Path('/mnt/d/brood/M1/projects/spnetvc')
 base_dir = Path('/home/isako/M1/projects/spnetvc')
 dir_path_asj = Path('/data/corpus/ASJ')
-session_dir = base_dir / 'sessions'
+session_dir = base_dir / 'h_sessions'
 wav_dir = session_dir / 'wav_data'
 tng_data_dir = session_dir / 'train_data'
 val_data_dir = session_dir / 'valid_data'

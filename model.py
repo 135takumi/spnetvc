@@ -24,7 +24,7 @@ def enc2d_layers():
         nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(64),
         nn.LeakyReLU(0.2),
-        nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1),
+        nn.Conv2d(64, 64, kernel_size=(4, 7), stride=2, padding=1),
     )
 
     return model
@@ -89,7 +89,7 @@ class Decoder(nn.Module):
 
         self.blocks = nn.ModuleList([
             nn.Sequential(
-                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(128, 64, kernel_size=(4, 7) , stride=2, padding=1, bias=False),
                 nn.BatchNorm2d(64),
                 nn.LeakyReLU()),
             nn.Sequential(
@@ -115,9 +115,9 @@ class Decoder(nn.Module):
         dec_output = cts_z
 
         for block in self.blocks:
-            img_size = dec_output.size(2)
-            # to do: わんちゃんバグる
-            x = [dec_output, atr_z.expand(batch_size, z_size, img_size, img_size)]
+            h_size = dec_output.size(2)
+            w_size = dec_output.size(3)
+            x = [dec_output, atr_z.expand(batch_size, z_size, h_size, w_size)]
             x = torch.cat(x, 1)
             dec_output = block(x)
 

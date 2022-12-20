@@ -31,9 +31,8 @@ def world_decode_spectral_envelop(coded_sp, fs):
     return decoded_sp
 
 
-def speech_synthesis(f0, coded_sp, ap, fs, frame_period=5.0):
-    decoded_sp = world_decode_spectral_envelop(coded_sp, fs)
-    wav_signal = pyworld.synthesize(f0, decoded_sp, ap, fs, frame_period)
-    wav_signal = wav_signal.astype(np.float32)
+def speech_synthesis(vocoder, coded_sp):
+    decoded_sp = vocoder(coded_sp)
+    wav_signal = decoded_sp.squeeze().cpu().detach().numpy()
 
     return wav_signal

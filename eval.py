@@ -1,134 +1,115 @@
 import argparse
 import json
 import os
+import random
 
+import hifigan
 import librosa
-import numpy as np
 import torch
+import torch.nn.functional as func
 
 import hyper_parameters as hp
 from model import SplitterVC
 from utils import (save_wav, speech_synthesis)
 
 
-def mcep_normalize(mcep, label, mcep_dict):
-    speaker_dict = mcep_dict[label]
+def melsp_normalize(melsp, label, melsp_dict):
+    speaker_dict = melsp_dict[label]
     mean, std = speaker_dict["mean"], speaker_dict["std"]
-    mcep = (mcep - mean) / std
+    melsp = (melsp - mean) / std
 
-    return mcep
+    return melsp
 
 
-def mcep_denormalize(mcep, label, mcep_dict):
-    speaker_dict = mcep_dict[label]
+def melsp_denormalize(melsp, label, melsp_dict):
+    speaker_dict = melsp_dict[label]
     mean, std = speaker_dict["mean"], speaker_dict["std"]
-    mcep = mcep * std + mean
+    melsp = melsp * std + mean
 
-    return mcep
+    return melsp
 
 
-def pitch_conversion(f0, source, target, f0_dict):
-    mean_source, std_source = f0_dict[source]["mean"], f0_dict[source]["std"]
-    mean_target, std_target = f0_dict[target]["mean"], f0_dict[target]["std"]
-
-    f0_converted = np.exp((np.log(f0 + 1e-6) - mean_source) / std_source * std_target + mean_target)
-
-    return f0_converted
-
-def delete_dump_fame(mceps, num_mcep_flame):
+def delete_dump_fame(melsps, num_melsp_flame):
     """
     生成したmelには重複しているフレームがあるのでそのフレームの削除
     """
 
     # ここで空のリストを作成
-    # (本来のフレーム数, 32)
-    reshaped_mcep = np.zeros((num_mcep_flame, mceps.shape[2]))
+    # (本来のフレーム数, 80)
+    reshaped_melsp = torch.zeros((num_melsp_flame, hp.melsp_channels)).to(hp.device)
 
-    for i in range(len(mceps)):
+    for i in range(len(melsps)):
         # データ1つ分とって、変換用に増やしていた次元1つを抜く
-        # (フレーム数、メルケプ次元数) = (32, 32)
-        target_mcep = mceps[i][0]
-        target_mcep = np.pad(target_mcep, [(i, num_mcep_flame - (i + hp.mcep_channels)),
-                                           (0, 0)], 'constant')
-        reshaped_mcep += target_mcep
+        # (フレーム数、メルスぺ次元数) = (32, 80)
+        target_melsp = melsps[i][0]
+        target_melsp = func.pad(target_melsp, (0, 0, i, num_melsp_flame - (i + hp.seq_len)))
+        reshaped_melsp += target_melsp
 
     # 1. メルケプ次元数をフレーム数に合わせてpaddingすることで、正方行列にする
-    reshaped_mcep = np.pad(reshaped_mcep, [(0, 0),
-                                           (0, num_mcep_flame - hp.mcep_channels)],
-                              'constant')
+    reshaped_melsp = func.pad(reshaped_melsp, (0, num_melsp_flame - hp.melsp_channels, 0, 0))
 
     # 2. 単位行列を作成し、中身を1, 1,…から1,1/2,…1/32,…1/32,1/31,…1にする
-    identity_matrix = np.eye(num_mcep_flame)
-    for flame in range(num_mcep_flame):
-        if flame < num_mcep_flame / 2:
-            identity_matrix[flame][flame] = 1 / min(flame + 1, hp.mcep_channels)
+    identity_matrix = torch.eye(num_melsp_flame).to(hp.device)
+    for flame in range(num_melsp_flame):
+        if flame < num_melsp_flame / 2:
+            identity_matrix[flame][flame] = 1 / min(flame + 1, hp.seq_len)
         else:
-            identity_matrix[flame][flame] = 1 / min(num_mcep_flame - flame, hp.mcep_channels)
+            identity_matrix[flame][flame] = 1 / min(num_melsp_flame - flame, hp.seq_len)
 
     # 2と1の行列積をとり、paddingしていた範囲を削除
-    reshaped_mcep = identity_matrix @ reshaped_mcep
-    reshaped_mcep = np.delete(reshaped_mcep, slice(hp.mcep_channels,
-                                                   num_mcep_flame), 1)
+    reshaped_melsp = identity_matrix @ reshaped_melsp
+    reshaped_melsp = reshaped_melsp[:, :hp.melsp_channels]
 
-    return reshaped_mcep
+    return reshaped_melsp
 
 
-def convert(model, source_speaker_dict, target_speaker_dict, f0_dict, mcep_dict, exp_name):
+def convert(model, vocoder, source_speaker_dict, target_speaker_dict, melsp_dict, exp_name):
     for source_speaker in source_speaker_dict:
         source_speaker_dir = hp.test_data_dir / source_speaker
 
-        for uttr in os.listdir(source_speaker_dir):
+        uttr_list = random.sample(os.listdir(source_speaker_dir), 1)
+        for uttr in uttr_list:
             source_uttr_dir = source_speaker_dir / uttr
             save_dir = hp.test_result_dir / exp_name / source_speaker / uttr
 
             if not os.path.isdir(source_uttr_dir):
                 continue
 
-            source_mcep = np.load(source_uttr_dir / "mcep.npy")
-            source_mcep_normalized = mcep_normalize(source_mcep, source_speaker, mcep_dict)
-            source_mcep_normalized = torch.from_numpy(source_mcep_normalized).float()
-            source_power = np.load(source_uttr_dir / "power.npy")
-            source_f0 = np.load(source_uttr_dir / "f0.npy")
-            source_ap = np.load(source_uttr_dir / "ap.npy")
+            source_melsp = torch.load(source_uttr_dir / "melsp.pt").to(hp.device)
+            source_melsp_frame_num = source_melsp.size(0) + hp.seq_len - 1
+            source_melsp_normalized = melsp_normalize(source_melsp, source_speaker, melsp_dict)
 
             for target_speaker in target_speaker_dict:
-                target_uttr_dir = hp.test_data_dir / target_speaker / uttr
+                target_uttr_dir = list(hp.test_data_dir.glob(target_speaker +
+                                                             "/VOICEACTRESS100_???/"))[0]
 
                 if not os.path.isdir(target_uttr_dir):
                     continue
 
-                target_mcep = np.load(target_uttr_dir / "mcep.npy")
-                target_mcep_normalized = mcep_normalize(target_mcep, source_speaker, mcep_dict)
-                target_mcep_normalized = torch.from_numpy(target_mcep_normalized).float()
-                target_power = np.load(target_uttr_dir / "power.npy")
-                target_f0 = np.load(target_uttr_dir / "f0.npy")
-                target_ap = np.load(target_uttr_dir / "ap.npy")
+                target_melsp = torch.load(target_uttr_dir / "melsp.pt").to(hp.device)
+                target_melsp_normalized = melsp_normalize(target_melsp, source_speaker, melsp_dict)
 
                 with torch.no_grad():
-                    _, cts_mean, _ = model.cts_encode(source_mcep_normalized.to(hp.device))
-                    _, atr_mean, _ = model.atr_encode(target_mcep_normalized.to(hp.device))
-                    atr_mean= torch.mean(atr_mean, 0, keepdim=True)
-                    mcep_converted = model.decode(cts_mean, atr_mean)
+                    _, cts_mean, _ = model.cts_encode(source_melsp_normalized)
+                    atr_z, _, _ = model.atr_encode(target_melsp_normalized)
+                    atr_z = torch.mean(atr_z, 0, keepdim=True)
+                    melsp_converted = model.decode(cts_mean, atr_z)
 
-                mcep_converted = mcep_converted.cpu().numpy()
-                source_mcep_frame_num = source_f0.shape[0] 
-                mcep_converted = delete_dump_fame(mcep_converted, source_mcep_frame_num)
-                mcep_denormed = mcep_denormalize(mcep_converted, source_speaker, mcep_dict)
-                mcep_denormed = np.concatenate([source_power, mcep_denormed], axis=1)
-                mcep_denormed = mcep_denormed.copy(order='C')
+                melsp_converted = melsp_converted
+                melsp_converted = delete_dump_fame(melsp_converted, source_melsp_frame_num)
+                melsp_denormed = melsp_denormalize(melsp_converted, source_speaker, melsp_dict)
+                melsp_denormed = torch.transpose(melsp_denormed, 0, 1).unsqueeze(0)
 
-                f0_converted = pitch_conversion(source_f0, source_speaker, target_speaker,
-                                                f0_dict)
+                converted_wav = speech_synthesis(vocoder, melsp_denormed)
 
-                converted_wav = speech_synthesis(f0_converted, mcep_denormed, source_ap,
-                                                 hp.sampling_rate)
+                target_melsp_frame_num = target_melsp.size(0) + hp.seq_len - 1
+                target_melsp_normalized = delete_dump_fame(target_melsp_normalized,
+                                                           target_melsp_frame_num)
+                target_melsp_denormed = melsp_denormalize(target_melsp_normalized, source_speaker,
+                                                          melsp_dict)
+                target_melsp_denormed = torch.transpose(target_melsp_denormed, 0, 1).unsqueeze(0)
 
-                target_mcep_frame_num = target_f0.shape[0]
-                target_mcep = delete_dump_fame(target_mcep, target_mcep_frame_num)
-                target_mcep = np.concatenate([target_power, target_mcep], axis=1)
-                target_mcep = target_mcep.copy(order='C')
-
-                target_wav = speech_synthesis(target_f0, target_mcep, target_ap, hp.sampling_rate)
+                target_wav = speech_synthesis(vocoder, target_melsp_denormed)
                 target_wav = librosa.util.normalize(target_wav) * 0.99
 
                 # [1.0, -1.0]の範囲を超えることがあるので正規化して0.99かけておく
@@ -155,28 +136,24 @@ def main():
     with open(hp.session_dir / "unseen_speaker.json", 'r') as f:
         unseen_speaker_dict = json.load(f)
 
-    with open(hp.session_dir / "f0_statistics.json", 'r') as f:
-        f0_dict = json.load(f)
-
-    mcep_dict = {}
-    with open(hp.session_dir / "mcep_statistics.json", 'r') as f:
+    melsp_dict = {}
+    with open(hp.session_dir / "melsp_statistics.json", 'r') as f:
         for k, v in json.load(f).items():
-            mcep_dict[k] = {
-                "mean": np.array(v["mean"])[None, :],
-                "std": np.array(v["std"])[None, :]
+            melsp_dict[k] = {
+                "mean": torch.tensor(v["mean"], dtype=torch.float, device=hp.device),
+                "std": torch.tensor(v["std"], dtype=torch.float, device=hp.device)
             }
 
     model = SplitterVC(hp.seen_speaker_num).to(hp.device)
     model.load_state_dict(torch.load(hp.tng_result_dir / args.exp_name / "spnetvc" / args.weight,
                                      map_location=hp.device)["model"])
     model.eval()
-    
-    convert(model, seen_test_speaker_dict, seen_test_speaker_dict, f0_dict, mcep_dict,
-            args.exp_name)
-    
-    convert(model, seen_test_speaker_dict, unseen_speaker_dict, f0_dict, mcep_dict,
+    vocoder = hifigan.get_vocoder().to(hp.device).to(hp.device)
+
+    convert(model, vocoder, seen_test_speaker_dict, seen_test_speaker_dict, melsp_dict,
             args.exp_name)
 
+    convert(model, vocoder, seen_test_speaker_dict, unseen_speaker_dict, melsp_dict, args.exp_name)
 
 
 if __name__ == '__main__':

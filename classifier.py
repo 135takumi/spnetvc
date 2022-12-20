@@ -108,12 +108,12 @@ def main():
     with open(hp.session_dir / "seen_speaker.json", 'r') as f:
         speaker_dict = json.load(f)
 
-    with open(hp.session_dir / "mcep_statistics.json", 'r') as f:
-        mcep_dict = json.load(f)
+    with open(hp.session_dir / "melsp_statistics.json", 'r') as f:
+        melsp_dict = json.load(f)
 
     # Create data loaders
-    train_data = AudioDataset(hp.tng_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
-    valid_data = AudioDataset(hp.val_data_dir, speaker_dict, mcep_dict, seq_len=hp.seq_len)
+    train_data = AudioDataset(hp.tng_data_dir, speaker_dict, melsp_dict, seq_len=hp.seq_len)
+    valid_data = AudioDataset(hp.val_data_dir, speaker_dict, melsp_dict, seq_len=hp.seq_len)
     train_loader = DataLoader(train_data, batch_size=hp.batch_size, shuffle=True)
     valid_loader = DataLoader(valid_data, batch_size=hp.batch_size, shuffle=True)
 

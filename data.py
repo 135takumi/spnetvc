@@ -7,27 +7,27 @@ import torch
 
 class AudioDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dir, speaker_dict, mcep_dict, seq_len=128):
+    def __init__(self, data_dir, speaker_dict, melsp_dict, seq_len=128):
 
         self.seq_len = seq_len
         self.speaker_dict = speaker_dict
 
-        self.mcep_dict = {}
-        for k, v in mcep_dict.items():
+        self.melsp_dict = {}
+        for k, v in melsp_dict.items():
             label = self.speaker_dict[k]
-            self.mcep_dict[label] = {
-                "mean": np.array(v['mean'])[None, :],
-                "std": np.array(v['std'])[None, :]
+            self.melsp_dict[label] = {
+                "mean": torch.tensor(v['mean'], dtype=torch.float),
+                "std": torch.tensor(v['std'], dtype=torch.float)
             }
 
         self.data = self.read_data(data_dir)
 
-    def mcep_normalize(self, mcep, label):
-        speaker_dict = self.mcep_dict[label]
+    def melsp_normalize(self, melsp, label):
+        speaker_dict = self.melsp_dict[label]
         mean, std = speaker_dict['mean'], speaker_dict['std']
-        mcep = (mcep - mean) / std
+        melsp = (melsp - mean) / std
 
-        return mcep
+        return melsp
 
     def read_data(self, data_dir):
         data = []
@@ -37,32 +37,29 @@ class AudioDataset(torch.utils.data.Dataset):
             speaker_dir = data_dir / speaker
 
             for uttr in os.listdir(speaker_dir):
-                uttr_dir = os.path.join(speaker_dir, uttr)
+                uttr_dir = speaker_dir / uttr
 
                 if not os.path.isdir(uttr_dir):
                     continue
 
-                mcep = np.load(os.path.join(uttr_dir, "mcep.npy"))
-                mcep = self.mcep_normalize(mcep, speaker_label)
-                data.append((mcep, speaker_label))
+                melsp = torch.load(uttr_dir / "melsp.pt")
+                melsp = self.melsp_normalize(melsp, speaker_label)
+                data.append((melsp, speaker_label))
 
         return data
 
     def __getitem__(self, index):
-        mcep, label = self.data[index]
+        melsp, label = self.data[index]
 
-        max_start = np.shape(mcep)[0] - 1
+        max_start = melsp.size()[0] - 1
         idx1 = random.randint(0, max_start)
         idx2 = random.randint(0, max_start)
-        mcep1 = mcep[idx1]
-        mcep2 = mcep[idx2]
-
-        mcep1 = torch.from_numpy(mcep1).float()
-        mcep2 = torch.from_numpy(mcep2).float()
+        melsp1 = melsp[idx1]
+        melsp2 = melsp[idx2]
 
         label = torch.from_numpy(np.array(label)).long()
 
-        return mcep1, mcep2, label
+        return melsp1, melsp2, label
 
     def __len__(self):
         return len(self.data)

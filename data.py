@@ -5,64 +5,64 @@ import numpy as np
 import torch
 
 
+from utils import mcep_normalize
+
+
 class AudioDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dir, speaker_dict, mcep_dict, seq_len=128):
+    def __init__(self, data_dir, spkr_dct, m_statistics_dct, seq_len=128):
 
         self.seq_len = seq_len
-        self.speaker_dict = speaker_dict
+        self.spkr_dct = spkr_dct
+        self.m_statistics_dct = {}
 
-        self.mcep_dict = {}
-        for k, v in mcep_dict.items():
-            label = self.speaker_dict[k]
-            self.mcep_dict[label] = {
+        # TODO: もっとエレガントな実装がありそう
+        # spkr_name:mcep_meanをspkr_id:mcep_meanに変える
+        for k, v in m_statistics_dct.items():
+            spkr_id = self.spkr_dct[k]
+            self.m_statistics_dct[spkr_id] = {
                 "mean": np.array(v['mean'])[None, :],
                 "std": np.array(v['std'])[None, :]
             }
 
         self.data = self.read_data(data_dir)
 
-    def mcep_normalize(self, mcep, label):
-        speaker_dict = self.mcep_dict[label]
-        mean, std = speaker_dict['mean'], speaker_dict['std']
-        mcep = (mcep - mean) / std
-
-        return mcep
 
     def read_data(self, data_dir):
         data = []
 
-        for speaker in os.listdir(data_dir):
-            speaker_label = self.speaker_dict[speaker]
-            speaker_dir = data_dir / speaker
+        for spkr in os.listdir(data_dir):
+            spkr_id  = self.spkr_dct[spkr]
+            spkr_dir = data_dir / spkr
 
-            for uttr in os.listdir(speaker_dir):
-                uttr_dir = os.path.join(speaker_dir, uttr)
+            for uttr in os.listdir(spkr_dir):
+                uttr_dir = os.path.join(spkr_dir, uttr)
 
                 if not os.path.isdir(uttr_dir):
                     continue
 
                 mcep = np.load(os.path.join(uttr_dir, "mcep.npy"))
-                mcep = self.mcep_normalize(mcep, speaker_label)
-                data.append((mcep, speaker_label))
+                mcep = mcep_normalize(mcep, spkr_id, self.m_statistics_dct)
+                data.append((mcep, spkr_id))
 
         return data
 
     def __getitem__(self, index):
-        mcep, label = self.data[index]
+        mcep, spkr_id = self.data[index]
 
-        max_start = np.shape(mcep)[0] - 1
-        idx1 = random.randint(0, max_start)
-        idx2 = random.randint(0, max_start)
+        last_head = np.shape(mcep)[0] - 1
+
+        idx1 = random.randint(0, last_head)
+        idx2 = random.randint(0, last_head)
         mcep1 = mcep[idx1]
         mcep2 = mcep[idx2]
 
         mcep1 = torch.from_numpy(mcep1).float()
         mcep2 = torch.from_numpy(mcep2).float()
 
-        label = torch.from_numpy(np.array(label)).long()
+        spkr_id = torch.from_numpy(np.array(spkr_id)).long()
 
-        return mcep1, mcep2, label
+        return mcep1, mcep2, spkr_id
 
     def __len__(self):
         return len(self.data)

@@ -12,7 +12,7 @@ def reparameterize(mean, logvar):
 
 def enc2d_layers():
     model = nn.Sequential(
-        nn.Conv2d(1, 32, kernel_size=4, stride=2, padding=1),
+        nn.Conv2d(1,  32, kernel_size=4, stride=2, padding=1),
         nn.BatchNorm2d(32),
         nn.LeakyReLU(0.2),
         nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
@@ -48,40 +48,6 @@ class Encoder2d(nn.Module):
         return mean, logvar
 
 
-class Encoder1d(nn.Module):
-
-    def __init__(self, in_channels=32):
-        super().__init__()
-
-        self.model = nn.Sequential(
-            nn.Conv1d(in_channels, 32, kernel_size=1, stride=1),
-            nn.BatchNorm1d(32),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(32, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(64, 64, kernel_size=1, stride=1),
-            nn.AvgPool1d(32, stride=1)
-        )
-        self.fc_mean = nn.Linear(64, 64)
-        self.fc_logvar = nn.Linear(64, 64)
-
-    def forward(self, x):
-        x = (torch.squeeze(x)).permute(0,2,1)
-        x = self.model(x)
-        x = x.view(-1, 64)
-        mean = self.fc_mean(x)
-        logvar = self.fc_logvar(x)
-
-        return mean, logvar
-
-
 class Decoder(nn.Module):
 
     def __init__(self):
@@ -89,22 +55,27 @@ class Decoder(nn.Module):
 
         self.blocks = nn.ModuleList([
             nn.Sequential(
-                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1,
+                                   bias=False),
                 nn.BatchNorm2d(64),
                 nn.LeakyReLU()),
             nn.Sequential(
-                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1,
+                                   bias=False),
                 nn.BatchNorm2d(64),
                 nn.LeakyReLU()),
             nn.Sequential(
-                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1,
+                                   bias=False),
                 nn.BatchNorm2d(64),
                 nn.LeakyReLU()),
             nn.Sequential(
-                nn.ConvTranspose2d(128, 32, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(128, 32, kernel_size=4, stride=2, padding=1,
+                                   bias=False),
                 nn.BatchNorm2d(32),
                 nn.LeakyReLU()),
-            nn.ConvTranspose2d(96, 1, kernel_size=4, stride=2, padding=1,bias=False)]
+            nn.ConvTranspose2d(96, 1, kernel_size=4, stride=2, padding=1,
+                               bias=False)]
         )
 
     def forward(self, cts_z, atr_z):
@@ -116,8 +87,9 @@ class Decoder(nn.Module):
 
         for block in self.blocks:
             img_size = dec_output.size(2)
-            # to do: わんちゃんバグる
             x = [dec_output, atr_z.expand(batch_size, z_size, img_size, img_size)]
+            # TODO: concatじゃなくてconditional batich norm とかのほうがいいかも
+            # 要素和でも良いらしいが，品質的にあまりよくなかったのでパス
             x = torch.cat(x, 1)
             dec_output = block(x)
 
@@ -128,6 +100,8 @@ class LatentDiscriminator(nn.Module):
     def __init__(self, n_speaker):
         super().__init__()
 
+        # TODO: 現状5層だが識別器が弱く，敵対的学習が上手くできていない可能性あり
+        # TODO: 層数や構造をかえてより強力にすると良くなるかも
         self.model = nn.Sequential(
             nn.Linear(64, 64),
             nn.BatchNorm1d(64),
@@ -144,14 +118,13 @@ class LatentDiscriminator(nn.Module):
             nn.Linear(16, n_speaker),
         )
 
-    def forward(self, x):
-        x = self.model(x)
+    def forward(self, z):
+        x = self.model(z)
 
         return x
 
 
 class VAE(nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -164,6 +137,7 @@ class SplitterVC(nn.Module):
     def __init__(self,  n_speaker):
         super().__init__()
 
+        # discriminatorとvaeを別々に動かしたい場面があるのでこのような実装にしてる
         self.vae = VAE()
         self.cts_ld = LatentDiscriminator(n_speaker)
         self.atr_ld = LatentDiscriminator(n_speaker)
@@ -197,7 +171,9 @@ class SplitterVC(nn.Module):
 
 
 class Classifier(nn.Module):
-
+    """
+    外部識別器のクラス
+    """
     def __init__(self, n_speaker):
         super().__init__()
 
